@@ -25,7 +25,7 @@ pipeline {
                     env.listoftest= props.listoftest
                 }
                
-                jobDsl scriptText: """multiJob(\'exampleofdsltoscript\') {
+                jobDsl scriptText: """multiJob(\'IxiaBpSrxFw-latest-daily\') {
                     parameters {
                         stringParam('build_tag', "$BUILD_TAG")
                     }
