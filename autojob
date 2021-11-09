@@ -1,0 +1,86 @@
+
+pipeline {
+    agent any
+    
+    stages {
+        stage('Get Test Components list') {
+            steps {
+                sh '''rm -f hello.properties
+                      touch hello.properties
+                      echo arrayone="html csv" >> hello.properties
+                      apikey=$(curl -k -X POST -H "Content-Type: application/json" -d \'{"username": "admin", "password": "admin"}\' https://192.168.27.110/bps/api/v1/auth/session | jq -r \'.apiKey\')
+                      curl -k POST -H "Content-Type: application/json" -H "X-API-KEY:$apikey" -H "template:dg_Spain_preps" https://192.168.27.110/bps/api/v1/bps/workingmodel
+                      tests=$(curl -k -X GET -H "Content-Type: application/json" -H "X-API-KEY:$apikey" https://192.168.27.110/bps/api/v1/bps/workingmodel/settings | jq -r \'to_entries[] | "\\(.value.name)"\')
+                      echo listoftest=$tests >> hello.properties
+                      curl -k -X DELETE -H "X-API-KEY:$apikey" https://192.168.27.110/bps/api/v1/auth/session'''
+            }
+        }
+        
+        stage('reading from a file') {
+            steps {
+                // Demonstrate pulling some environment variables from a URL/file
+                script {
+                    def props = readProperties file: 'hello.properties'
+                    env.arrayone= props.arrayone
+                    env.listoftest= props.listoftest
+                }
+               
+                jobDsl scriptText: """multiJob(\'exampleofdsltoscript\') {
+                    parameters {
+                        stringParam('build_tag', "$BUILD_TAG")
+                    }
+                    parameters {
+                        stringParam('test_details', 'Run_New_Test', 'Run_New_Test or Test-id e.g. Test-100')
+                    }
+                    parameters {
+                        choiceParam(\'report_type\',"$arrayone".split(\' \').toList())
+                    }
+                    parameters {
+                        stringParam('model_name', 'dg_Spain_preps')
+                    }
+                    parameters {
+                        stringParam('network_neighborhood', 'dg_autoGen_Spain_NN', 'Run_New_Test or Test-id e.g. Test-100')
+                    }
+                    parameters {
+                        choiceParam(\'test_component\', "$listoftest".split(' ').toList())
+                    }
+                    steps {
+                        phase('remove former images') {
+                            phaseJob('IxiaBpSrxFw-127.0.0.1-ixiabps-latest-rmi')//{
+                            //     parameters{
+                            //         predefinedProp('Job execution type', 'Running phase jobs in parallel')
+                            //         predefinedProp("Continuation condition to next phase when jobs' statuses are:", 'Successful')
+                            //     }
+                            // }
+                        }
+                        phase('pull containers') {
+                            phaseJob('IxiaBpSrxFw-127.0.0.1-ixiabps-latest-pull'){
+                                parameters{
+                                    predefinedProp('Job execution type', 'Running phase jobs in parallel')
+                                    predefinedProp("Continuation condition to next phase when jobs' statuses are:", 'Successful')
+                                }
+                            }
+                        }
+                        phase('127.0.0.1/ixiabps:latest') {
+                            phaseJob('IxiaBpSrxFw-127.0.0.1-ixiabps-latest-IXIA-BPS-SRX-run'){
+                                parameters{
+                                    predefinedProp('Job execution type', 'Running phase jobs sequentially')
+                                    predefinedProp("Continuation condition to next phase when jobs' statuses are:", 'Successful')
+                                }
+                            }
+                        }
+                        phase('dump all campaign data') {
+                            phaseJob('IxiaBpSrxFw-latest-zip'){
+                                parameters{
+                                    predefinedProp('Job execution type', 'Running phase jobs in parallel')
+                                    predefinedProp("Continuation condition to next phase when jobs' statuses are:", 'Successful')
+                                }
+                            }
+                        }
+                    }
+                }"""                
+                
+            }
+        }
+    }
+}
